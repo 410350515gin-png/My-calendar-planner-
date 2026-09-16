@@ -36,8 +36,10 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 安裝繪圖套件
-        run: pip install reportlab
+      - name: 安裝系統中文字型與 ReportLab
+        run: |
+          sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+          pip install reportlab
 
       - name: 執行 Python 生成 PDF 手帳
         run: |
@@ -54,4 +56,3 @@ jobs:
         with:
           name: "Planner-${{ github.event.inputs.year }}"
           path: "Custom_Planner_${{ github.event.inputs.year }}.pdf"
-
