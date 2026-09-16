@@ -1,6 +1,7 @@
 import argparse
 import calendar
 import datetime
+import glob
 import os
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import A4
@@ -23,38 +24,46 @@ WEEKDAYS_CN = ["週一", "週二", "週三", "週四", "週五", "週六", "週�
 
 
 def register_chinese_fonts():
-  """尋找並註冊系統中的中文字型"""
-  font_candidates = [
-      # Ubuntu / GitHub Actions (fonts-noto-cjk)
-      (
-          "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-          "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-      ),
-      (
-          "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-          "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
-      ),
-      # Windows
-      ("C:/Windows/Fonts/msjh.ttc", "C:/Windows/Fonts/msjhbd.ttc"),
-      # macOS
-      ("/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/PingFang.ttc"),
-  ]
+  """尋找並註冊中文字型，相容 Linux (Ubuntu/GitHub Actions)、Windows 與 macOS"""
+  # 優先搜尋 GitHub Actions / Ubuntu 的 NotoSansCJK 字型
+  cjk_ttc_candidates = glob.glob(
+      "/usr/share/fonts/**/NotoSansCJK*.ttc", recursive=True
+  ) + glob.glob("/usr/share/fonts/**/NotoSansTC*.otf", recursive=True)
 
-  regular_font = None
-  bold_font = None
+  if cjk_ttc_candidates:
+    font_path = cjk_ttc_candidates[0]
+    try:
+      if font_path.endswith(".ttc"):
+        # TTC 格式需要指定 subfontIndex
+        pdfmetrics.registerFont(
+            TTFont("ChineseFont", font_path, subfontIndex=0)
+        )
+      else:
+        pdfmetrics.registerFont(TTFont("ChineseFont", font_path))
+      return "ChineseFont", "ChineseFont"
+    except Exception as e:
+      print(f"載入 Linux CJK 字型失敗: {e}")
 
-  for reg_path, bold_path in font_candidates:
-    if os.path.exists(reg_path):
-      regular_font = reg_path
-      bold_font = bold_path if os.path.exists(bold_path) else reg_path
-      break
+  # Windows 候選字型 (微軟正黑體)
+  msjh_path = "C:/Windows/Fonts/msjh.ttc"
+  if os.path.exists(msjh_path):
+    try:
+      pdfmetrics.registerFont(TTFont("ChineseFont", msjh_path, subfontIndex=0))
+      return "ChineseFont", "ChineseFont"
+    except Exception:
+      pass
 
-  if regular_font:
-    pdfmetrics.registerFont(TTFont("ChineseRegular", regular_font))
-    pdfmetrics.registerFont(TTFont("ChineseBold", bold_font))
-    return "ChineseRegular", "ChineseBold"
-  else:
-    return "Helvetica", "Helvetica-Bold"
+  # macOS 候選字型
+  mac_font = "/System/Library/Fonts/PingFang.ttc"
+  if os.path.exists(mac_font):
+    try:
+      pdfmetrics.registerFont(TTFont("ChineseFont", mac_font, subfontIndex=0))
+      return "ChineseFont", "ChineseFont"
+    except Exception:
+      pass
+
+  # 若完全找不到字型，退回預設（僅英數）
+  return "Helvetica", "Helvetica-Bold"
 
 
 FONT_REGULAR, FONT_BOLD = register_chinese_fonts()
