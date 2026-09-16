@@ -1,4 +1,4 @@
-name: Generate Custom Digital Planner
+name: Generate Notes-First Digital Planner
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ on:
         default: true
         type: boolean
       include_day:
-        description: "包含「日計畫 (時間軸 + 待辦)」"
+        description: "包含「日計畫 (大留白筆記版)」"
         required: true
         default: true
         type: boolean
