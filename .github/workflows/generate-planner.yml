@@ -1,1 +1,57 @@
+name: Generate Custom Digital Planner
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: '請輸入要生成的年份 (例如 2026, 2027)'
+        required: true
+        default: '2026'
+      include_annual:
+        description: '包含「年計畫」'
+        type: boolean
+        default: true
+      include_month:
+        description: '包含「月計畫」'
+        type: boolean
+        default: true
+      include_week:
+        description: '包含「週計畫」'
+        type: boolean
+        default: true
+      include_day:
+        description: '包含「日計畫 (時間軸+待辦)」'
+        type: boolean
+        default: true
+
+jobs:
+  build-pdf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下載專案原始碼
+        uses: actions/checkout@v4
+
+      - name: 設定 Python 環境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 安裝繪圖套件
+        run: pip install reportlab
+
+      - name: 執行 Python 生成 PDF 手帳
+        run: |
+          python generate.py \
+            --year ${{ github.event.inputs.year }} \
+            --annual ${{ github.event.inputs.include_annual }} \
+            --month ${{ github.event.inputs.include_month }} \
+            --week ${{ github.event.inputs.include_week }} \
+            --day ${{ github.event.inputs.include_day }} \
+            --output "Custom_Planner_${{ github.event.inputs.year }}.pdf"
+
+      - name: 上傳 PDF 供直接下載
+        uses: actions/upload-artifact@v4
+        with:
+          name: "Planner-${{ github.event.inputs.year }}"
+          path: "Custom_Planner_${{ github.event.inputs.year }}.pdf"
 
