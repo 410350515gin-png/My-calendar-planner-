@@ -1,15 +1,15 @@
 import argparse
 import calendar
 import datetime
-import glob
-import os
+
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfgen import canvas
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
+
 SIDEBAR_WIDTH = 45
 CONTENT_WIDTH = PAGE_WIDTH - SIDEBAR_WIDTH - 20
 MARGIN = 25
@@ -22,63 +22,43 @@ C_DOT = HexColor("#C4C4C4")
 
 WEEKDAYS_CN = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
 
-
-def register_chinese_fonts():
-  """尋找並註冊中文字型，相容 Linux (Ubuntu/GitHub Actions)、Windows 與 macOS"""
-  # 優先搜尋 GitHub Actions / Ubuntu 的 NotoSansCJK 字型
-  cjk_ttc_candidates = glob.glob(
-      "/usr/share/fonts/**/NotoSansCJK*.ttc", recursive=True
-  ) + glob.glob("/usr/share/fonts/**/NotoSansTC*.otf", recursive=True)
-
-  if cjk_ttc_candidates:
-    font_path = cjk_ttc_candidates[0]
-    try:
-      if font_path.endswith(".ttc"):
-        # TTC 格式需要指定 subfontIndex
-        pdfmetrics.registerFont(
-            TTFont("ChineseFont", font_path, subfontIndex=0)
-        )
-      else:
-        pdfmetrics.registerFont(TTFont("ChineseFont", font_path))
-      return "ChineseFont", "ChineseFont"
-    except Exception as e:
-      print(f"載入 Linux CJK 字型失敗: {e}")
-
-  # Windows 候選字型 (微軟正黑體)
-  msjh_path = "C:/Windows/Fonts/msjh.ttc"
-  if os.path.exists(msjh_path):
-    try:
-      pdfmetrics.registerFont(TTFont("ChineseFont", msjh_path, subfontIndex=0))
-      return "ChineseFont", "ChineseFont"
-    except Exception:
-      pass
-
-  # macOS 候選字型
-  mac_font = "/System/Library/Fonts/PingFang.ttc"
-  if os.path.exists(mac_font):
-    try:
-      pdfmetrics.registerFont(TTFont("ChineseFont", mac_font, subfontIndex=0))
-      return "ChineseFont", "ChineseFont"
-    except Exception:
-      pass
-
-  # 若完全找不到字型，退回預設（僅英數）
-  return "Helvetica", "Helvetica-Bold"
-
-
-FONT_REGULAR, FONT_BOLD = register_chinese_fonts()
+# 註冊 ReportLab 內建繁體中文字型
+pdfmetrics.registerFont(UnicodeCIDFont("MSung-Light"))
+FONT_REGULAR = "MSung-Light"
+FONT_BOLD = "MSung-Light"
 
 
 class KudrykvStylePlanner:
 
-  def __init__(self, filename, year, inc_annual, inc_month, inc_week, inc_day):
+  def __init__(
+      self, filename, year, inc_annual, inc_month, inc_week, inc_day
+  ):
     self.filename = filename
     self.year = int(year)
     self.inc_annual = inc_annual
     self.inc_month = inc_month
     self.inc_week = inc_week
     self.inc_day = inc_day
+
     self.c = canvas.Canvas(self.filename, pagesize=A4)
+    self.week_list = []
+    self.date_to_week_idx = {}
+    self._prepare_weeks()
+
+  def _prepare_weeks(self):
+    start_date = datetime.date(self.year, 1, 1)
+    cur = start_date - datetime.timedelta(days=start_date.weekday())
+    end_date = datetime.date(self.year, 12, 31)
+
+    week_idx = 1
+    while cur <= end_date:
+      days = [cur + datetime.timedelta(days=i) for i in range(7)]
+      self.week_list.append((week_idx, days))
+      for d in days:
+        if d.year == self.year:
+          self.date_to_week_idx[d] = week_idx
+      week_idx += 1
+      cur += datetime.timedelta(days=7)
 
   def draw_dot_grid(self, x, y, width, height, spacing=14):
     self.c.setFillColor(C_DOT)
@@ -129,7 +109,7 @@ class KudrykvStylePlanner:
     self.draw_sidebar("annual")
     self.c.setFont(FONT_BOLD, 24)
     self.c.setFillColor(C_TEXT_DARK)
-    self.c.drawString(MARGIN, PAGE_HEIGHT - 50, f"{self.year}")
+    self.c.drawString(MARGIN, PAGE_HEIGHT - 50, str(self.year))
 
     cols, rows = 3, 4
     cw = (CONTENT_WIDTH - MARGIN) / cols
@@ -139,7 +119,7 @@ class KudrykvStylePlanner:
       r = (m - 1) // cols
       c = (m - 1) % cols
       x = MARGIN + c * cw
-      y = (PAGE_HEIGHT - 90) - r * rh
+      y = PAGE_HEIGHT - 90 - r * rh
 
       self.c.setFont(FONT_BOLD, 11)
       self.c.setFillColor(C_TEXT_DARK)
@@ -171,6 +151,7 @@ class KudrykvStylePlanner:
                   (dx - 4, dy - 2, dx + 4, dy + 7),
                   Border="[0 0 0]",
               )
+
     self.c.showPage()
 
   def build_month_page(self, month):
@@ -214,11 +195,13 @@ class KudrykvStylePlanner:
                 Border="[0 0 0]",
             )
           self.draw_dot_grid(cur_x, cur_y, col_w, row_h - 18, spacing=10)
+
     self.c.showPage()
 
   def build_week_page(self, week_num, days_in_week):
     self.c.bookmarkPage(f"dest_w_{week_num}")
-    self.draw_sidebar("week", days_in_week[0].month)
+    mid_month = days_in_week[3].month
+    self.draw_sidebar("week", mid_month)
 
     first_d = days_in_week[0].strftime("%m.%d")
     last_d = days_in_week[-1].strftime("%m.%d")
@@ -234,7 +217,7 @@ class KudrykvStylePlanner:
     slot_h = (PAGE_HEIGHT - 90) / 7
 
     for idx, d in enumerate(days_in_week):
-      slot_y = (PAGE_HEIGHT - 65) - (idx + 1) * slot_h
+      slot_y = PAGE_HEIGHT - 65 - (idx + 1) * slot_h
       self.c.setStrokeColor(C_BORDER)
       self.c.setLineWidth(0.6)
       self.c.line(MARGIN, slot_y, MARGIN + gw, slot_y)
@@ -243,7 +226,8 @@ class KudrykvStylePlanner:
       self.c.setFillColor(C_TEXT_DARK)
       day_str = f"{d.month:02d}.{d.day:02d} {WEEKDAYS_CN[d.weekday()]}"
       self.c.drawString(MARGIN + 5, slot_y + slot_h - 18, day_str)
-      if self.inc_day:
+
+      if self.inc_day and d.year == self.year:
         self.c.linkRect(
             "",
             f"dest_d_{d.month}_{d.day}",
@@ -254,11 +238,14 @@ class KudrykvStylePlanner:
       self.draw_dot_grid(
           MARGIN + 100, slot_y + 2, gw - 100, slot_h - 10, spacing=11
       )
+
     self.c.showPage()
 
   def build_day_page(self, cur_date):
-    m, d = cur_date.month, cur_date.day
-    w_num = cur_date.isocalendar()[1]
+    m = cur_date.month
+    d = cur_date.day
+    w_num = self.date_to_week_idx.get(cur_date, 1)
+
     self.c.bookmarkPage(f"dest_d_{m}_{d}")
     self.draw_sidebar("day", m)
 
@@ -293,6 +280,7 @@ class KudrykvStylePlanner:
 
     self.c.setStrokeColor(C_LINE)
     self.c.line(MARGIN + left_w, body_y, MARGIN + left_w, body_y + body_h)
+
     time_slots = list(range(8, 23))
     slot_h = body_h / len(time_slots)
 
@@ -311,15 +299,16 @@ class KudrykvStylePlanner:
 
     todo_rows = 10
     todo_slot_h = 24
+
     for i in range(todo_rows):
-      ty = (body_y + body_h - 28) - (i + 1) * todo_slot_h
+      ty = body_y + body_h - 28 - (i + 1) * todo_slot_h
       self.c.setStrokeColor(C_BORDER)
       self.c.rect(rx, ty + 5, 10, 10, fill=0, stroke=1)
       self.c.setStrokeColor(C_LINE)
       self.c.line(rx + 18, ty + 5, rx + right_w - 20, ty + 5)
 
     notes_y = body_y
-    notes_h = (body_y + body_h - 28) - todo_rows * todo_slot_h - body_y
+    notes_h = body_y + body_h - 28 - todo_rows * todo_slot_h - body_y
     self.draw_dot_grid(rx, notes_y, right_w - 20, notes_h, spacing=11)
     self.c.showPage()
 
@@ -330,41 +319,29 @@ class KudrykvStylePlanner:
       for m in range(1, 13):
         self.build_month_page(m)
     if self.inc_week:
-      cur = datetime.date(self.year, 1, 1)
-      cur -= datetime.timedelta(days=cur.weekday())
-      end = datetime.date(self.year, 12, 31)
-      seen_weeks = set()
-      while cur <= end:
-        w_num = cur.isocalendar()[1]
-        if w_num not in seen_weeks:
-          seen_weeks.add(w_num)
-          days = [cur + datetime.timedelta(days=i) for i in range(7)]
-          self.build_week_page(w_num, days)
-        cur += datetime.timedelta(days=7)
+      for w_num, days in self.week_list:
+        self.build_week_page(w_num, days)
     if self.inc_day:
       cur = datetime.date(self.year, 1, 1)
+      end = datetime.date(self.year, 12, 31)
       one_day = datetime.timedelta(days=1)
-      while cur.year == self.year:
+      while cur <= end:
         self.build_day_page(cur)
         cur += one_day
     self.c.save()
 
 
+def str_to_bool(value):
+  return str(value).lower() in ("true", "1", "yes", "y")
+
+
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("--year", type=int, default=2026)
-  parser.add_argument(
-      "--annual", type=lambda x: (str(x).lower() == "true"), default=True
-  )
-  parser.add_argument(
-      "--month", type=lambda x: (str(x).lower() == "true"), default=True
-  )
-  parser.add_argument(
-      "--week", type=lambda x: (str(x).lower() == "true"), default=True
-  )
-  parser.add_argument(
-      "--day", type=lambda x: (str(x).lower() == "true"), default=True
-  )
+  parser.add_argument("--annual", type=str_to_bool, default=True)
+  parser.add_argument("--month", type=str_to_bool, default=True)
+  parser.add_argument("--week", type=str_to_bool, default=True)
+  parser.add_argument("--day", type=str_to_bool, default=True)
   parser.add_argument("--output", type=str, default="planner.pdf")
   args = parser.parse_args()
 
@@ -372,3 +349,4 @@ if __name__ == "__main__":
       args.output, args.year, args.annual, args.month, args.week, args.day
   )
   planner.generate()
+  print(f"PDF 生成完成：{args.output}")
