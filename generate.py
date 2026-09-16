@@ -1,8 +1,11 @@
 import argparse
 import calendar
 import datetime
+import os
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
@@ -17,6 +20,44 @@ C_TEXT_MUTED = HexColor("#737373")
 C_DOT = HexColor("#C4C4C4")
 
 WEEKDAYS_CN = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
+
+
+def register_chinese_fonts():
+  """尋找並註冊系統中的中文字型"""
+  font_candidates = [
+      # Ubuntu / GitHub Actions (fonts-noto-cjk)
+      (
+          "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+          "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+      ),
+      (
+          "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+          "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+      ),
+      # Windows
+      ("C:/Windows/Fonts/msjh.ttc", "C:/Windows/Fonts/msjhbd.ttc"),
+      # macOS
+      ("/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/PingFang.ttc"),
+  ]
+
+  regular_font = None
+  bold_font = None
+
+  for reg_path, bold_path in font_candidates:
+    if os.path.exists(reg_path):
+      regular_font = reg_path
+      bold_font = bold_path if os.path.exists(bold_path) else reg_path
+      break
+
+  if regular_font:
+    pdfmetrics.registerFont(TTFont("ChineseRegular", regular_font))
+    pdfmetrics.registerFont(TTFont("ChineseBold", bold_font))
+    return "ChineseRegular", "ChineseBold"
+  else:
+    return "Helvetica", "Helvetica-Bold"
+
+
+FONT_REGULAR, FONT_BOLD = register_chinese_fonts()
 
 
 class KudrykvStylePlanner:
@@ -49,7 +90,7 @@ class KudrykvStylePlanner:
       self.c.setFillColor(
           C_TEXT_DARK if current_type == "annual" else C_TEXT_MUTED
       )
-      self.c.setFont("Helvetica-Bold", 11)
+      self.c.setFont(FONT_BOLD, 11)
       self.c.drawCentredString(sb_x + SIDEBAR_WIDTH / 2, y_top, str(self.year))
       self.c.linkRect(
           "",
@@ -65,7 +106,7 @@ class KudrykvStylePlanner:
         cur_y = start_m_y - (m - 1) * slot_h
         is_cur = current_type == "month" and current_val == m
         self.c.setFillColor(C_TEXT_DARK if is_cur else C_TEXT_MUTED)
-        self.c.setFont("Helvetica-Bold" if is_cur else "Helvetica", 9)
+        self.c.setFont(FONT_BOLD if is_cur else FONT_REGULAR, 9)
         self.c.drawCentredString(sb_x + SIDEBAR_WIDTH / 2, cur_y, f"{m:02d}月")
         self.c.linkRect(
             "",
@@ -77,7 +118,7 @@ class KudrykvStylePlanner:
   def build_annual_page(self):
     self.c.bookmarkPage("dest_annual")
     self.draw_sidebar("annual")
-    self.c.setFont("Helvetica-Bold", 24)
+    self.c.setFont(FONT_BOLD, 24)
     self.c.setFillColor(C_TEXT_DARK)
     self.c.drawString(MARGIN, PAGE_HEIGHT - 50, f"{self.year}")
 
@@ -91,7 +132,7 @@ class KudrykvStylePlanner:
       x = MARGIN + c * cw
       y = (PAGE_HEIGHT - 90) - r * rh
 
-      self.c.setFont("Helvetica-Bold", 11)
+      self.c.setFont(FONT_BOLD, 11)
       self.c.setFillColor(C_TEXT_DARK)
       self.c.drawString(x, y, f"{m:02d}月")
       if self.inc_month:
@@ -100,13 +141,13 @@ class KudrykvStylePlanner:
         )
 
       cal = calendar.monthcalendar(self.year, m)
-      self.c.setFont("Helvetica", 6.5)
+      self.c.setFont(FONT_REGULAR, 6.5)
       self.c.setFillColor(C_TEXT_MUTED)
       col_w = (cw - 15) / 7
       for idx, w_name in enumerate(["一", "二", "三", "四", "五", "六", "日"]):
         self.c.drawCentredString(x + idx * col_w + 5, y - 14, w_name)
 
-      self.c.setFont("Helvetica", 7)
+      self.c.setFont(FONT_REGULAR, 7)
       for row_idx, week in enumerate(cal):
         for day_idx, day in enumerate(week):
           if day != 0:
@@ -126,7 +167,7 @@ class KudrykvStylePlanner:
   def build_month_page(self, month):
     self.c.bookmarkPage(f"dest_m_{month}")
     self.draw_sidebar("month", month)
-    self.c.setFont("Helvetica-Bold", 20)
+    self.c.setFont(FONT_BOLD, 20)
     self.c.setFillColor(C_TEXT_DARK)
     self.c.drawString(MARGIN, PAGE_HEIGHT - 50, f"{self.year} / {month:02d}月")
 
@@ -137,7 +178,7 @@ class KudrykvStylePlanner:
     col_w = gw / 7
     row_h = (gh - 25) / len(cal)
 
-    self.c.setFont("Helvetica-Bold", 9)
+    self.c.setFont(FONT_BOLD, 9)
     self.c.setFillColor(C_TEXT_MUTED)
     for i, w in enumerate(WEEKDAYS_CN):
       self.c.drawString(gx + i * col_w + 5, gy + gh - 15, w)
@@ -153,7 +194,7 @@ class KudrykvStylePlanner:
         self.c.setStrokeColor(C_LINE)
         self.c.rect(cur_x, cur_y, col_w, row_h, fill=0, stroke=1)
         if day != 0:
-          self.c.setFont("Helvetica-Bold", 9)
+          self.c.setFont(FONT_BOLD, 9)
           self.c.setFillColor(C_TEXT_DARK)
           self.c.drawString(cur_x + 6, cur_y + row_h - 14, str(day))
           if self.inc_day:
@@ -172,7 +213,7 @@ class KudrykvStylePlanner:
 
     first_d = days_in_week[0].strftime("%m.%d")
     last_d = days_in_week[-1].strftime("%m.%d")
-    self.c.setFont("Helvetica-Bold", 16)
+    self.c.setFont(FONT_BOLD, 16)
     self.c.setFillColor(C_TEXT_DARK)
     self.c.drawString(
         MARGIN,
@@ -189,7 +230,7 @@ class KudrykvStylePlanner:
       self.c.setLineWidth(0.6)
       self.c.line(MARGIN, slot_y, MARGIN + gw, slot_y)
 
-      self.c.setFont("Helvetica-Bold", 11)
+      self.c.setFont(FONT_BOLD, 11)
       self.c.setFillColor(C_TEXT_DARK)
       day_str = f"{d.month:02d}.{d.day:02d} {WEEKDAYS_CN[d.weekday()]}"
       self.c.drawString(MARGIN + 5, slot_y + slot_h - 18, day_str)
@@ -212,14 +253,14 @@ class KudrykvStylePlanner:
     self.c.bookmarkPage(f"dest_d_{m}_{d}")
     self.draw_sidebar("day", m)
 
-    self.c.setFont("Helvetica-Bold", 20)
+    self.c.setFont(FONT_BOLD, 20)
     self.c.setFillColor(C_TEXT_DARK)
     self.c.drawString(
         MARGIN, PAGE_HEIGHT - 45, f"{m:02d}月{d:02d}日 {WEEKDAYS_CN[cur_date.weekday()]}"
     )
 
     if self.inc_week:
-      self.c.setFont("Helvetica", 9)
+      self.c.setFont(FONT_REGULAR, 9)
       self.c.setFillColor(C_TEXT_MUTED)
       self.c.drawRightString(
           CONTENT_WIDTH, PAGE_HEIGHT - 42, f"第 {w_num} 週 ↗"
@@ -248,14 +289,14 @@ class KudrykvStylePlanner:
 
     for idx, hour in enumerate(time_slots):
       line_y = body_y + body_h - (idx + 1) * slot_h
-      self.c.setFont("Helvetica", 8)
+      self.c.setFont(FONT_REGULAR, 8)
       self.c.setFillColor(C_TEXT_MUTED)
       self.c.drawString(MARGIN + 5, line_y + slot_h - 10, f"{hour:02d}:00")
       self.c.setStrokeColor(C_LINE)
       self.c.line(MARGIN + 35, line_y, MARGIN + left_w - 10, line_y)
 
     rx = MARGIN + left_w + 15
-    self.c.setFont("Helvetica-Bold", 10)
+    self.c.setFont(FONT_BOLD, 10)
     self.c.setFillColor(C_TEXT_DARK)
     self.c.drawString(rx, body_y + body_h - 12, "今日重點任務 (TASKS)")
 
